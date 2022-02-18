@@ -44,6 +44,12 @@ function genID() {
         name: 'host',
         message: 'host to use',
         default: '127.0.0.1'
+    },
+    {
+        type: 'confirm',
+        name: 'upgrade',
+        message: 'Do you want to automatically upgrade new connections?',
+        default: false
     }
     ])
 
@@ -92,10 +98,7 @@ function genID() {
     const net = require('net')
     const readline = require('readline')
     const chalk = require('chalk')
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    })
+    let rl = null;
     const prompt = (question) => {
         return new Promise((resolve, reject) => {
             rl.question(question, resolve)
@@ -104,6 +107,7 @@ function genID() {
 
     // COMMAND GENERATOR
     function createCommand(command, data) {
+        data = data || []
         const enc = new TextEncoder('utf-8')
         return new Uint8Array([command, ...enc.encode(data)])
     }
@@ -128,6 +132,13 @@ function genID() {
             socket.destroy()
             return;
         }
+        // SETUP INPUT
+        rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        })
+
+        // INFORM ABOUT NEW CONNECTION
         const sa = socket.address()
         console.log()
         signale.info(`New connection with ${sa.address} (${sa.family}) established`)
@@ -145,6 +156,7 @@ function genID() {
         socket.on('close', () => {
             console.log()
             signale.error(`Connection with ${sa.address} (${sa.family}) lost`)
+            rl.close()
             isConnected = false
         })
 
@@ -161,6 +173,17 @@ function genID() {
                     dead_code: true
                 }
             }).code
+        }
+
+        // UPGRADE?
+        if (ans.upgrade) {
+            methods.send(0x05)
+            const reply = await methods.clientResponse()
+            if (reply == '^MODULE^') {
+                signale.info('Upgrading connection')
+                await commands.upgrade(methods, [])
+                signale.success('Connection upgraded')
+            }
         }
 
         // HANDLE COMMANDS
